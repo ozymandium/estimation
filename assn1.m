@@ -24,13 +24,13 @@ sys = tf(1,[m,b,k]);
     sys.outputu = {'m'};
     sys.inputn = {'Force'};
     sys.inputu = {'N'};
-[numd, dend] = c2dm(1, [m,b,k], dt_dsc);
+[numd, dend] = c2dm(sys.num{1}, sys.num{1}, dt_dsc);
 sysd = tf(numd,dend,dt_dsc);
     sysd.outputn = {'Position'};
     sysd.outputu = {'m'};
     sysd.inputn = {'Force'};
     sysd.inputu = {'N'};
-[A,B,C,D] = tf2ss(1, [m,b,k]);
+[A,B,C,D] = tf2ss(sys.num{1}, sys.den{1});
 [Ad,Bd,Cd,Dd] = c2dm(A,B,C,D, dt_dsc, 'zoh');
 
 % % General System stuff
@@ -120,31 +120,36 @@ end
 % Discrete - Euler
 x1_dsc_eul = zeros(1, length(t_dsc));
 x2_dsc_eul = x1_dsc_eul;
-for k = 1:length(x1_dsc_eul)
-    x1_dsc_eul(k+2) = u/2 - x1_dsc_eul(k+1) - 2*x1_dsc_eul(k);
-    x2_dsc_eul(k+2) = u/2 - x2_dsc_eul(k+1) - 2*x2_dsc_eul(k);
-    
-    x1_dsc_eul(k+1) = x1_dsc_eul(k+2)*z1;
-    x2_dsc_eul(k+1) = x2_dsc_eul(k+2)*z2;
-    
-    x1_dsc_eul(k) = x1_dsc_eul(k+1)*z1;
-    x2_dsc_eul(k) = x2_dsc_eul(k+1)*z2;
+for k = 3:length(x1_dsc_eul)+2
+    x1_dsc_eul(k) = u/2 - x1_dsc_eul(k-1) - 2*x1_dsc_eul(k-2);
+    x2_dsc_eul(k) = u/2 - x2_dsc_eul(k-1) - 2*x2_dsc_eul(k-2);
+
+    x1_dsc_eul(k-1) = x1_dsc_eul(k)*z1;
+    x2_dsc_eul(k-1) = x2_dsc_eul(k)*z2;
+
+    x1_dsc_eul(k-2) = x1_dsc_eul(k-1)*z1;
+    x2_dsc_eul(k-2) = x2_dsc_eul(k-1)*z2;
 end
 figure
 plot(t_dsc, x1_dsc_eul(1:end-2), t_dsc, x2_dsc_eul(1:end-2))
+
+% % Auto-Simulations
+fig_auto = namefig('AutoSims');
+hold on
+step(sys)
+dstep(numd, dend, length(t_dsc))
+%     t_dstp = max(t_dsc)*sort(st_dstp(:,1))';
 
 % % Plotting
 close(floc,fbode)
 fig_comp = namefig('Step Response Simulations');
 ax = axes('Color', [0.5, 0.5, 0.5]);
 hold on
-plot(t_ana, x_ana, 'm',...
-     t_eul, x_eul, 'c',...
-     t_trp, x_trp, 'k',...
-     t_dsc, x_dsc_ss, 'r')
-% Auto-Simulations
-step(sys)
-dstep(Ad, Bd, Cd, Dd) %%% ????
+plot(t_ana, x_ana,    'm',...
+     t_eul, x_eul,    'c',...
+     t_trp, x_trp,    'k')
+stairs(t_dsc, x_dsc_ss,'r')
+% stairs(t_dstp, x_dstp, 'b')
 grid on
 title('Step Response')
 xlabel('Time (s)')
@@ -153,8 +158,6 @@ legend(['Analytical: dt=',num2str(dt_ana)],...
        ['Cont Euler: dt=',num2str(dt_eul)],...
        ['Cont Trapz: dt=',num2str(dt_trp)],...
        ['Disc St Sp: dt=',num2str(dt_dsc)],...
-       'step Func',...
-       ['dstep Func: dt=',num2str(dt_dsc)],...
        'Location','SouthEast')
 
 % Discrete - Euler - Noise response
