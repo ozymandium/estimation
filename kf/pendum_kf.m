@@ -1,29 +1,33 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % 
-% Kalman Filter for Linear System - Mass,Spring,Damper
-%   - comparison for ideal, unnoisy system with lsim
-%   - should work for any linear system by changing constants 
-%       Continuous state space matrices
+% Kalman Filter for NonLinear System - Pendulum with Damper, input Torque
+%   - Qc is estimated by cov(randn(< # states >))
+%   - Comparison for actual nonlinear via trapezoid integration
+%       - changing system means needing to change the nonlinear simulation    
 % 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clear all; close all; clc
 format compact
-rng(1);
+% rng(1);
+%% Parameters
 
-%% Constants
-m = 5;
+m = 2;
+r = 1;
 b = 4;
-k = 7;
+g = 9.81;
+J = m*r^2;
 
-ts = 0.05;
-time = 0:ts:20;
+ts = 0.02;
+time = 0:ts:5;
 nt = length(time);
 nsim = 500;
 
+in_mag = 10; % magnitude of input
+
 %% System
 
-Ac = [-b/m,-k/m;1,0];
-Bc = [1/m;0];
+Ac = [-b/J,-m*g/J;1,0];
+Bc = [1/J;0];
 Cc = [0,1];
 Dc = 0;
 
@@ -38,7 +42,7 @@ nin = length(Dc); % # inputs
 nms = min(size(Cd));
 
 Bw = [1,0;0,1]; % noise input matrix (continuous)
-Qc = [1,0;0,1]; % process noise covariance in continuous
+Qc = [2,0;0,2]; % process noise covariance in continuous
 
 % % Bryson's Trick
 S = [-Ac, Bw*Qc*Bw'; zeros(length(Ac)), Ac']; % Bryson's trick
@@ -50,14 +54,9 @@ Qd = Ad_bryson*C_bryson(1:nst,nst+1:2*nst); % process noise covariance in discre
 Rc = 10; % measurement noise covariance in continuous
 Rd = exp(Rc*ts); % measurement noise covariance in discrete
 
-% % estimate Pss
-% Pss = lyap(Ac,Qc);
-% Pssd = dlyap(Ad,Qd);
-
-%% Simulation - KF
+%% Simulation
 
 % % Input
-in_mag = 10;
 u = in_mag*ones(nin,nt,nsim); % input - step
 
 x = zeros(nst,nt,nsim); % states
@@ -65,14 +64,14 @@ x_bef = zeros(nst,nt,nsim); % state estimates before update
 x_aft = zeros(nst,nt,nsim); % state estimates after update
 x_err = zeros(nms,nt,nsim); % state estimate errors
 y = zeros(nms,nt,nsim); % measurements
-w = zeros(2,nt,nsim); % process noise
+w = zeros(nst,nt,nsim); % process noise
 v = randn(nms,nt,nsim); % measurement noise
 P_bef = zeros(nst,nst,nt,nsim);
 P_aft = zeros(nst,nst,nt,nsim);
 L = zeros(nst,nt,nsim);
 
 % % Initial conditions
-for n = 1:nsim % should be able to start P from anywhere and have it converge???
+for n = 1:nsim % should be able to start P from anywhere and have it converge, but can't here...?
     P_bef(:,:,1,n) = dlyap(Ad,Qd); % start P at the steady state value
 end
 
@@ -80,7 +79,7 @@ for n = 1:nsim
     for k = 1:nt       
         % time update
         w(:,k,n) = sqrtm(Qd)*randn(nst,1);
-        x(:,k+1,n) = Ad*x(:,k,n) + Bd*u(1,k,n) + Bw*w(:,k,n);
+        x(:,k+1,n) = Ad*x(:,k,n) + Bd*u(1,k,n) + w(:,k,n);
         y(:,k+1,n) = Cd*x(:,k,n) + Rd*v(1,k,n);
         
         % Kalman gain
@@ -98,6 +97,19 @@ for n = 1:nsim
     end        
 end
 
+%% Simulation: Nonlinear system
+
+thetaDD_nl = zeros(nsim,nt);
+thetaD_nl = zeros(nsim,nt);
+theta_nl = zeros(nsim,nt);
+
+for n = 1:nsim
+    for k = 1:nt-1 % use trapezoid integration
+        thetaDD_nl(n,k+1) = -b/J*thetaD_nl(n,k) - m*g/J*sin(theta_nl(n,k)) + 1/J*u(1,k,n) + w(1,k,n);
+        thetaD_nl(n,k+1) = thetaD_nl(n,k) + 0.5*sum(thetaDD_nl(n,k:k+1))*ts + w(2,k,n);
+        theta_nl(n,k+1) = theta_nl(n,k) + 0.5*sum(thetaD_nl(n,k:k+1))*ts;
+    end
+end
 
 %% Post Mortem
 
@@ -108,6 +120,7 @@ x_aft_mean = mean(x_aft,3);
 x_err_mean = mean(x_err,3);
 x_err_true = x_aft-x(:,1:end-1,:); % true error in estimate
 x_err_true_mean = mean(x_err_true,3);
+theta_nl_mean = mean(theta_nl,1);
 
 % % Ideal
 [y_ideal, t_ideal, x_ideal] = lsim(plant_d, u(:,:,1), time, x(:,1,1));
@@ -119,8 +132,10 @@ subplot(3,1,[1 2])
 plot(time,x_mean(2,1:end-1),...
      time,y_mean(1,1:end-1),...
      time,x_aft_mean(2,:),...
-     t_ideal,y_ideal,'k')
-legend('State','Meas','Est','Ideal'); grid on; title('Filter')
+     t_ideal,y_ideal,'k',...
+     time,theta_nl_mean,...
+     'LineWidth',2)
+legend('State','Meas','Est','Ideal Lin','Nonlinear', 'Location','Best'); grid on; title('Filter')
 subplot(3,1,3)
 plot(time,x_err_mean,...
      time,x_err_true_mean(2,:))
