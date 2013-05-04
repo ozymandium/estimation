@@ -20,7 +20,7 @@ J = m*r^2;
 ts = 0.02;
 time = 0:ts:5;
 nt = length(time);
-nsim = 500;
+nsim = 100;
 
 in_mag = 10; % magnitude of input
 
@@ -66,13 +66,12 @@ x_err = zeros(nms,nt,nsim); % state estimate errors
 y = zeros(nms,nt,nsim); % measurements
 w = zeros(nst,nt,nsim); % process noise
 v = randn(nms,nt,nsim); % measurement noise
-P_bef = zeros(nst,nst,nt,nsim);
-P_aft = zeros(nst,nst,nt,nsim);
+P = zeros(nst,nst,nt,nsim);
 L = zeros(nst,nt,nsim);
 
 % % Initial conditions
 for n = 1:nsim % should be able to start P from anywhere and have it converge, but can't here...?
-    P_bef(:,:,1,n) = dlyap(Ad,Qd); % start P at the steady state value
+    P(:,:,1,n) = dlyap(Ad,Qd); % start P at the steady state value
 end
 
 for n = 1:nsim
@@ -83,8 +82,8 @@ for n = 1:nsim
         y(:,k+1,n) = Cd*x(:,k,n) + Rd*v(1,k,n);
         
         % Kalman gain
-        P_aft(:,:,k,n) = inv( P_bef(:,:,k,n) + Cd'*inv(Rd)*Cd );
-        L(:,k,n) = P_aft(:,:,k,n)*Cd'*inv(Rd);
+        P(:,:,k,n) = inv( P(:,:,k,n) + Cd'*inv(Rd)*Cd );
+        L(:,k,n) = P(:,:,k,n)*Cd'*inv(Rd);
         
         % measurement update
         x_err(:,k,n) = y(1,k,n) - Cd*x_bef(:,k,n);
@@ -93,7 +92,7 @@ for n = 1:nsim
 
         % Next step prediction
         x_bef(:,k+1,n) = Ad*x_aft(:,k,n) + Bd*u(:,k,n);
-        P_bef(:,:,k+1,n) = Ad*P_aft(:,:,k,n)*Ad' + Qd; % can even do this before running the simulation
+        P(:,:,k+1,n) = Ad*P(:,:,k,n)*Ad' + Qd; % can even do this before running the simulation
     end        
 end
 

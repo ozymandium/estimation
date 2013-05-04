@@ -13,9 +13,9 @@ format compact
 % rng(1);
 %% Parameters
 
-m = 2;
-r = 1;
-b = 4;
+m = 3;
+r = 2;
+b = 5;
 g = 9.81;
 J = m*r^2;
 
@@ -23,9 +23,9 @@ ts = 0.01;
 reinit_P_int = 5; % how many time steps to go before reinitializing P
 time = 0:ts:5;
 nt = length(time);
-nsim = 100;
+nsim = 10;
 
-in_mag = 10; % magnitude of input
+in_mag = 15; % magnitude of input
 
 %% System
 
@@ -69,14 +69,13 @@ x_err = zeros(nms,nt,nsim); % state estimate errors
 y = zeros(nms,nt,nsim); % measurements
 w = zeros(nst,nt,nsim); % process noise
 v = randn(nms,nt,nsim); % measurement noise
-P_bef = zeros(nst,nst,nt,nsim);
-P_aft = zeros(nst,nst,nt,nsim);
+P = zeros(nst,nst,nt,nsim); % state estimate error
+S = zeros(nst,nst,nt,nsim); % state prediction covariance
 L = zeros(nst,nt,nsim);
 
 % % Initial conditions
 for n = 1:nsim % !? should be able to start P from anywhere and have it converge, but can't here...
-    P_bef(:,:,1,n) = dlyap(Ad,Qd); % start P at the steady state value
-    P_aft(:,:,1,n) = dlyap(Ad,Qd);
+    P(:,:,1,n) = dlyap(Ad,Qd);
 end
 
 % % Make matrix A 3D so it can be updated in time
@@ -91,31 +90,34 @@ for n = 1:nsim
     for k = 2:nt       
         % Update state matrices - system-specific
         Ad(:,:,k,n) = Ad(:,:,k-1,n);
-%         if x_aft(2,k,n) % update Ad index with sine if non-zero state
-%             Ad(1,2,k,n) = Ad(1,2,k,n)*sin(x_aft(2,k,n))/x_aft(2,k,n); % propagate sine(theta) forward
-%         end
+        if x_aft(2,k,n) % update Ad index with sine if non-zero state
+            Ad(1,2,k,n) = Ad(1,2,k,n)*sin(x_aft(2,k,n))/x_aft(2,k,n); % propagate sine(theta) forward
+        end
         
         % time update for states
         w(:,k-1,n) = sqrtm(Qd)*randn(nst,1);
-        x(:,k,n) = Ad(:,:,k)*x(:,k-1,n) + Bd*u(1,k-1,n);% + w(:,k-1,n);
-        y(:,k,n) = Cd*x(:,k-1,n);% + Rd*v(1,k-1,n);
+        x(:,k,n) = Ad(:,:,k)*x(:,k-1,n) + Bd*u(1,k-1,n); + w(:,k-1,n);
+        y(:,k,n) = Cd*x(:,k-1,n) + Rd*v(1,k-1,n);
               
         % Time update
-        P_bef_dot = Ad(:,:,k,n)*P_bef(:,:,k-1,n) + P_bef(:,:,k-1,n)*Ad(:,:,k,n)' + Qd; % !? should PCR-1CP be here?
-        P_bef(:,:,k,n) = P_aft(:,:,k-1,n) + P_bef_dot*ts;
+        P_dot = Ad(:,:,k,n)*P(:,:,k-1,n) + P(:,:,k-1,n)*Ad(:,:,k,n)' + Qd;
+        P(:,:,k,n) = P(:,:,k-1,n) + P_dot*ts;
         x_bef_dot = Ad(:,:,k,n)*x_bef(:,k-1,n) + Bd*u(:,k-1,n);
         x_bef(:,k,n) = x_aft(:,k-1,n) + x_bef_dot*ts;
 
+        % Measurement Prediction Covariance
+        S(:,:,k,n) = Cd*P(:,:,k,n)*Cd'+Rd;
         % Kalman Gain
-        L(:,k,n) = P_bef(:,:,k,n)*Cd'*inv(Cd*P_bef(:,:,k,n)*Cd'+Rd);
+        L(:,k,n) = P(:,:,k,n)*Cd'*inv(S(:,:,k,n));
 
         % Measurement update
         x_err(:,k,n) = y(:,k,n) - Cd*x_bef(:,k,n); % estimate of state error 
         x_aft(:,k,n) = x_bef(:,k,n) + L(:,k,n)*x_err(:,k,n);
         if floor(k/reinit_P_int)==k 
-            P_aft(:,:,k,n) = 0.5*(P_aft(:,:,k,n)+P_aft(:,:,k,n)');
-        else
-            P_aft(:,:,k,n) = ( eye(nst) - L(:,k,n)*Cd )*P_bef(:,:,k,n); 
+            % Reinitialize P on intervals
+            P(:,:,k,n) = 0.5*(P(:,:,k,n)+P(:,:,k,n)');
+        else           
+            P(:,:,k,n) = ( eye(nst) - L(:,k,n)*Cd )*P(:,:,k,n); 
         end
     end        
 end
