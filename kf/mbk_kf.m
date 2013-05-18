@@ -1,24 +1,16 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% 
-% Kalman Filter for Linear System - Mass,Spring,Damper
-%   - comparison for ideal, unnoisy system with lsim
-%   - should work for any linear system by changing constants 
-%       Continuous state space matrices
-% 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clear all; close all; clc
 format compact
 rng(1);
 
 %% Constants
-m = 5;
-b = 4;
-k = 7;
+m = 10;
+b = 7;
+k = 10;
 
-ts = 0.05;
+ts = 0.1;
 time = 0:ts:20;
 nt = length(time);
-nsim = 500;
+nsim = 1000;
 
 %% System
 
@@ -31,14 +23,15 @@ Dc = 0;
 
 plant_c = ss(Ac,Bc,Cc,Dc);
 plant_d = c2d(plant_c, ts, 'zoh');
-% plant_tf = tf(1,[m,b,k]);
-
+plant_tf = tf(1,[m,b,k]);
+    
 nst = length(Ac); % # states
 nin = length(Dc); % # inputs
 nms = min(size(Cd));
 
-Bw = [1,0;0,1]; % noise input matrix (continuous)
-Qc = [1,0;0,1]; % process noise covariance in continuous
+Bw = [0.5,0;0,0.5]; % noise input matrix
+% Bwd= expm(Bwc.*ts);
+Qc = cov(randn(2)); % process noise covariance in continuous
 
 % % Bryson's Trick
 S = [-Ac, Bw*Qc*Bw'; zeros(length(Ac)), Ac']; % Bryson's trick
@@ -47,6 +40,11 @@ Ad_bryson = C_bryson( nst+1:2*nst, nst+1:2*nst )';
 if Ad_bryson ~= Ad, warning('Ad Bryson not equal to Ad'); end
 Qd = Ad_bryson*C_bryson(1:nst,nst+1:2*nst); % process noise covariance in discrete; assume constant
 
+% Qd_actual = zeros(nsim,1);
+% for n = 1:nsim
+%     Qd_actual(n) = 
+% end
+
 Rc = 10; % measurement noise covariance in continuous
 Rd = exp(Rc*ts); % measurement noise covariance in discrete
 
@@ -54,7 +52,7 @@ Rd = exp(Rc*ts); % measurement noise covariance in discrete
 % Pss = lyap(Ac,Qc);
 % Pssd = dlyap(Ad,Qd);
 
-%% Simulation - KF
+%% Simulation
 
 % % Input
 in_mag = 10;
@@ -72,7 +70,8 @@ P_aft = zeros(nst,nst,nt,nsim);
 L = zeros(nst,nt,nsim);
 
 % % Initial conditions
-for n = 1:nsim % should be able to start P from anywhere and have it converge???
+% % should be able to start P from anywhere and have it converge
+for n = 1:nsim
     P_bef(:,:,1,n) = dlyap(Ad,Qd); % start P at the steady state value
 end
 
@@ -98,33 +97,35 @@ for n = 1:nsim
     end        
 end
 
-
-%% Post Mortem
-
 % % Mean over all runs
 x_mean = mean(x,3);
 y_mean = mean(y,3);
 x_aft_mean = mean(x_aft,3);
 x_err_mean = mean(x_err,3);
-x_err_true = x_aft-x(:,1:end-1,:); % true error in estimate
-x_err_true_mean = mean(x_err_true,3);
 
 % % Ideal
 [y_ideal, t_ideal, x_ideal] = lsim(plant_d, u(:,:,1), time, x(:,1,1));
 
+
 %% Plotting
 
 fig_sim = figure('Name','Simulation');
-subplot(3,1,[1 2])
+subplot(2,1,1)
 plot(time,x_mean(2,1:end-1),...
      time,y_mean(1,1:end-1),...
-     time,x_aft_mean(2,:),...
-     t_ideal,y_ideal,'k')
-legend('State','Meas','Est','Ideal'); grid on; title('Filter')
-subplot(3,1,3)
-plot(time,x_err_mean,...
-     time,x_err_true_mean(2,:))
-title('Errors'); grid on; legend('Est.','True')
+     time,x_aft_mean(2,:))
+legend('State','Meas','Est'); grid on; title('Filter')
+subplot(2,1,2)
+plot(time,x_err_mean)
+title('Error Estimate'); grid on
+
+fig_ideal = figure('Name','Ideal');
+plot(t_ideal,y_ideal,...
+     t_ideal,x_ideal(:,2))
+legend('Meas','State'); grid on; title('Ideal')
+
+
+
 
 
 

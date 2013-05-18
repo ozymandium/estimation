@@ -48,8 +48,8 @@ Bw = [1,0;0,1]; % noise input matrix (continuous)
 Qc = [1,0;0,1]; % process noise covariance in continuous
 
 % % Bryson's Trick
-S = [-Ac, Bw*Qc*Bw'; zeros(nst), Ac']; % Bryson's trick
-C_bryson = expm(S.*ts);
+S_bryson = [-Ac, Bw*Qc*Bw'; zeros(nst), Ac']; % Bryson's trick
+C_bryson = expm(S_bryson.*ts);
 Ad_bryson = C_bryson( nst+1:2*nst, nst+1:2*nst )';
 if Ad_bryson ~= Ad, warning('Ad Bryson not equal to Ad'); end
 Qd = Ad_bryson*C_bryson(1:nst,nst+1:end); % process noise covariance in discrete; assume constant
@@ -81,9 +81,7 @@ end
 % % Make matrix A 3D so it can be updated in time
 Ad_ = Ad;
 Ad = zeros(nst,nst,nt,nsim);
-for n=1:nsim
-    Ad(:,:,1,n) = Ad_;
-end
+for n=1:nsim, Ad(:,:,1,n) = Ad_; end
 
 % % Actual simulation part
 for n = 1:nsim
@@ -106,14 +104,16 @@ for n = 1:nsim
         x_bef(:,k,n) = x_aft(:,k-1,n) + x_bef_dot*ts;
 
         % Measurement Prediction Covariance
-        S(:,:,k,n) = Cd*P(:,:,k,n)*Cd'+Rd;
+        % !!! dimension issues?
+%         S(:,:,k,n) = Cd*P(:,:,k,n)*Cd'+Rd;
         % Kalman Gain
-        L(:,k,n) = P(:,:,k,n)*Cd'*inv(S(:,:,k,n));
+%         L(:,k,n) = P(:,:,k,n)*Cd'/S(:,:,k,n);
+        L(:,k,n) = P(:,:,k,n)*Cd'/(Cd*P(:,:,k,n)*Cd'+Rd);
 
         % Measurement update
         x_err(:,k,n) = y(:,k,n) - Cd*x_bef(:,k,n); % estimate of state error 
         x_aft(:,k,n) = x_bef(:,k,n) + L(:,k,n)*x_err(:,k,n);
-        if floor(k/reinit_P_int)==k 
+        if floor(k/reinit_P_int)==(k/reinit_P_int) 
             % Reinitialize P on intervals
             P(:,:,k,n) = 0.5*(P(:,:,k,n)+P(:,:,k,n)');
         else           
