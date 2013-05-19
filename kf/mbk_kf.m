@@ -90,12 +90,12 @@ for k = 1:tlen
     % Kalman gain
     L(:,:,k) = Pbef(:,:,k)*Cd'/(Cd*Pbef(:,:,k)*Cd'+Rd);
 
-    % measurement update
+    % measurement updaten (Correction)
     S(:,k) = y(:,k) - Cd*xbef(:,k);
     xaft(:,k) = xbef(:,k) + L(:,:,k)*S(:,k);
     Paft(:,:,k) = (eye(n,n)-L(:,:,k)*Cd)*Pbef(:,:,k);
 
-    % Time update
+    % Time update (Prediction)
     xbef(:,k+1) = Ad*xaft(:,k) + Bd*u(:,k);
     Pbef(:,:,k+1) = Ad*Paft(:,:,k)*Ad' + Qd; % can even do this before running the simulation
 end        
