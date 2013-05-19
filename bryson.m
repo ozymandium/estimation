@@ -1,29 +1,29 @@
-function [Ad,Qd] = bryson(Ac,Qc,Bw,Ts)
+function [Ad,Qd] = bryson(Ac,Qc,G,Ts)
 % Bryons's Trick - Convert the A and Q matrices from continuous to discrete
 % 
-% [Ad,Qd] = bryson(Ac,Qc,Bw)
+% [Ad,Qd] = bryson(Ac,Qc,G,Ts)
 % 
 % INPUTS:
 %       Ac = system dynamic matrix in continuous domain 
-%       Bw = noise input matrix
 %       Qc = process noise covariance matrix in continuous domain 
+%       G = noise input matrix
 %       Ts = Time step (s)
 % OUTPUTS:
 %       Ad = system dynamic matrix in discrete domain 
 %       Qd = process noise covariance matrix in discrete domain 
 
 % number of states
-nst = length(Ac);
-if length(Bw)~=nst, error('must have noise input matrix length = # states'), end
+n = length(Ac);
+if length(G)~=n, error('must have noise input matrix length = # states'), end
 
-S = [-Ac, Bw*Qc*Bw'; zeros(size(Ac)), Ac'];
-C_bryson = expm(S.*Ts);
+S_bryson = [-Ac, G*Qc*G'; zeros(n), Ac'];
+C_bryson = expm(S_bryson.*Ts);
 
-Ad = C_bryson( nst+1:2*nst, nst+1:2*nst )';
-% % if Ad ~= 
-% %     warning('Ad Bryson not equal to Ad');
-% % end
+Ad = C_bryson( n+1:2*n, n+1:2*n )';
+if Ad~=exp(Ac*Ts)
+    warning('bryson:Ad_Error','Ad Bryson not equal to exp(Ac*Ts)');
+end
 
-Qd = Ad*C_bryson(1:nst,nst+1:2*nst);
+Qd = Ad*C_bryson(1:n,n+1:2*n);
 
 end

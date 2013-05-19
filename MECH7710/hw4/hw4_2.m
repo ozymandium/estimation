@@ -4,40 +4,30 @@
 %   using Michael Wooten's HW as a guide.
 %   `aft' refers to occuring after the measurement update.
 %   `bef' refers to ocurring before the measurement update.
+%   We know the true state is zero throughout the data set
 % 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clear all; close all; clc
-data=load('hw4_2.txt'); t=data(:,1); y=data(:,2); clear data
+data=load('hw4_2.txt'); time=data(:,1); y=data(:,2); clear data
 
 %% System/Setup
 Ts = 0.1;
-time = 0:Ts:150;
 tlen = length(time);
 
 Ac = 0; Ad = exp(Ac*Ts);
-Bc = 0; Bd = exp(Bc*Ts);
-Qd = 0.1; %! Tune this
+Gc = 0; Gd = exp(Gc*Ts);
+Qd = 0.01 %! Tune this
+
 Cc = 1; Cd = exp(Cc*Ts);
-Rc = 1; Rd = exp(Rc*Ts);
+Rc = 2; Rd = exp(Rc*Ts)
 
-v = 0 + 1.*randn(tlen,1); % generate Sensor noise
-x = zeros(1,tlen); % state
-y = zeros(1,tlen); % measurement
+%% a/b
 
-% system
-for k = 1:tlen-1
-    x(k+1) = Ad*x(k);
-    y(k) = Cd*x(k) + Rd*v(k);
-end
-
-
-%% a
-
-[L_ss,Pbef_ss,Paft_ss,poles] = dlqe(0,0,1,Qd,1);
+[L_ss,Pbef_ss,Paft_ss,poles] = dlqe(Ad,Gd,Cd,Qd,Rd)
 
 % simulate
 Pbef = zeros(1,tlen);
-Pbef(1) = 1; % use steady state P value for initial P guess
+Pbef(1) = 10; %! tune this as well???
 Paft = zeros(1,tlen);
 L = zeros(1,tlen);
 x_bef = ones(1,tlen);
@@ -54,9 +44,32 @@ for k=1:tlen-1
     x_bef(k+1) = Ad*x_aft(k);
     Pbef(k+1) = Ad*Paft(k)*Ad' + Qd;
 end
+% last time step
+Paft(k+1) = inv( inv(Pbef(k+1)) + Cd'/Rd*Cd ); % Estimate Uncertainty
 L(k+1) = Paft(k+1)*Cd'/Rd;
 x_aft(k+1) = x_bef(k) + L(k)*(y(k)-Cd*x_bef(k)); % update estimate
 
-figa = namefig('a');
+%% c/d
+
+numd_filter = sqrt(Qd);
+dend_filter = [1, -(1-sqrt(Qd))];
+y0 = y(1)
+yf = filter(numd_filter, dend_filter, y, y0);
+
+%% plot
+
+figa = namefig('a/b/c');
 subplot(2,1,1); plot(time,L); grid on; title('Kalman Gain');
-subplot(2,1,2); plot(time,x_aft); grid on; title('bias estimate');
+subplot(2,1,2)
+plot(time,y,...
+    time,x_aft,...
+    time,yf,...
+    'LineWidth',2)
+grid on; title('bias estimate & meas vs filt meas'); legend('meas','est','filt'); hold on
+
+
+
+
+
+
+

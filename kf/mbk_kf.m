@@ -1,130 +1,138 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+% Simple Kalman Filter for Mass-Spring-Damper System
+%   `aft' refers to occuring after the measurement update (a posteriori).
+%   `bef' refers to ocurring before the measurement update (a priori).
+% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clear all; close all; clc
-format compact
-rng(1);
+% format compact
+% rng(1);
 
 %% Constants
-m = 10;
-b = 7;
-k = 10;
+mass = 10;
+damping = 7;
+spring = 5;
 
-ts = 0.1;
-time = 0:ts:20;
-nt = length(time);
-nsim = 1000;
+Ts = 0.05;
+time = 0:Ts:20;
+tlen = length(time);
+
+in_mag = 20;
+wstd = 0.05;
+vstd = 0.1;
 
 %% System
 
-Ac = [-b/m,-k/m;1,0];
-Bc = [1/m;0];
-Cc = [0,1];
-Dc = 0;
+Ac = [-damping/mass, -spring/mass; 1,0];
+Bc = [1/mass; 0];
+G = eye(2,2); % noise input matrix
+Cc = [0,1]; Cd = Cc;
+Dc = 0; Dd = Dc;
 
-[Ad,Bd,Cd,Dd] = c2dm(Ac,Bc,Cc,Dc, ts,'zoh');
+n = length(Ac); % # states
+l = length(Dc); % # inputs
+m = size(Cc,1); % # measurements
 
+% [Ad,Bd,Cd,Dd] = c2dm(Ac,Bc,Cc,Dc, Ts,'zoh');
 plant_c = ss(Ac,Bc,Cc,Dc);
-plant_d = c2d(plant_c, ts, 'zoh');
-plant_tf = tf(1,[m,b,k]);
+plant_d = c2d(plant_c, Ts, 'zoh');
     
-nst = length(Ac); % # states
-nin = length(Dc); % # inputs
-nms = min(size(Cd));
+% process noise covariance in continuous
+% Qc = wstd^2*eye(n,n) % this causes estimate to follow ideal behavior of
+% unnoisy system
+Qc = 0.3*eye(n,n)
 
-Bw = [0.5,0;0,0.5]; % noise input matrix
-% Bwd= expm(Bwc.*ts);
-Qc = cov(randn(2)); % process noise covariance in continuous
+% measurement noise covariance in continuous-time
+% Rc = vstd^2 % this causes estimate to follow ideal behavior of
+% unnoisy system
+Rc = 0.001
+Rd = exp(Rc*Ts); % measurement noise covariance in discrete-time
 
-% % Bryson's Trick
-S = [-Ac, Bw*Qc*Bw'; zeros(length(Ac)), Ac']; % Bryson's trick
-C_bryson = expm(S.*ts);
-Ad_bryson = C_bryson( nst+1:2*nst, nst+1:2*nst )';
-if Ad_bryson ~= Ad, warning('Ad Bryson not equal to Ad'); end
-Qd = Ad_bryson*C_bryson(1:nst,nst+1:2*nst); % process noise covariance in discrete; assume constant
+[Ad,Qd] = bryson(Ac,Qc,G,Ts)
+Bd = Ac\(Ad-eye(n,n))*Bc;
 
-% Qd_actual = zeros(nsim,1);
-% for n = 1:nsim
-%     Qd_actual(n) = 
-% end
 
-Rc = 10; % measurement noise covariance in continuous
-Rd = exp(Rc*ts); % measurement noise covariance in discrete
-
-% % estimate Pss
-% Pss = lyap(Ac,Qc);
-% Pssd = dlyap(Ad,Qd);
+% Steady State
+[Lss,Pbef_ss,Paft_ss,poles] = dlqe(Ad,eye(n,n),Cd,Qd,Rd);
 
 %% Simulation
 
-% % Input
-in_mag = 10;
-u = in_mag*ones(nin,nt,nsim); % input - step
+% % Inputs and Noises
+u = in_mag*ones(l,tlen); % input - step
+w = zeros(n,tlen); % process noise in discrete-time
+v = zeros(m,tlen);  
+w(2,:) = 0 + wstd.*randn(1,tlen); % only apply noise to position
+v(1,:) = 0 + vstd.*randn(1,tlen); % measurement noise
 
-x = zeros(nst,nt,nsim); % states
-x_bef = zeros(nst,nt,nsim); % state estimates before update
-x_aft = zeros(nst,nt,nsim); % state estimates after update
-x_err = zeros(nms,nt,nsim); % state estimate errors
-y = zeros(nms,nt,nsim); % measurements
-w = zeros(2,nt,nsim); % process noise
-v = randn(nms,nt,nsim); % measurement noise
-P_bef = zeros(nst,nst,nt,nsim);
-P_aft = zeros(nst,nst,nt,nsim);
-L = zeros(nst,nt,nsim);
+% Preallocation
+x = zeros(n,tlen); % states
+y = zeros(m,tlen); % measurements
+L = zeros(n,m,tlen);
+S = zeros(m,tlen); % Residual/Innovation
+xaft = zeros(n,tlen); % state estimates after update
+Paft = zeros(n,n,tlen);
+xbef = zeros(n,tlen); % state estimates before update
+Pbef = zeros(n,n,tlen);
 
-% % Initial conditions
+% Initial conditions
 % % should be able to start P from anywhere and have it converge
-for n = 1:nsim
-    P_bef(:,:,1,n) = dlyap(Ad,Qd); % start P at the steady state value
+Pbef(:,:,1) = Pbef_ss;
+
+% plant simulation
+for k=1:tlen
+    x(:,k+1) = Ad*x(:,k) + Bd*u(:,k) + w(:,k);
+    y(:,k+1) = Cd*x(:,k) + v(1,k);   
 end
 
-for n = 1:nsim
-    for k = 1:nt       
-        % time update
-        w(:,k,n) = sqrtm(Qd)*randn(nst,1);
-        x(:,k+1,n) = Ad*x(:,k,n) + Bd*u(1,k,n) + Bw*w(:,k,n);
-        y(:,k+1,n) = Cd*x(:,k,n) + Rd*v(1,k,n);
-        
-        % Kalman gain
-        P_aft(:,:,k,n) = inv( P_bef(:,:,k,n) + Cd'*inv(Rd)*Cd );
-        L(:,k,n) = P_aft(:,:,k,n)*Cd'*inv(Rd);
-        
-        % measurement update
-        x_err(:,k,n) = y(1,k,n) - Cd*x_bef(:,k,n);
-        x_aft(:,k,n) = x_bef(:,k,n) + L(:,k,n)*x_err(:,k,n);
-%         x_aft(:,k,n) = L(:,k,n)'*x_bef(:,k,n) + L(:,k,n)*y(:,k,n);
+% Estimator Simulation
+for k = 1:tlen         
+    % Kalman gain
+    L(:,:,k) = Pbef(:,:,k)*Cd'/(Cd*Pbef(:,:,k)*Cd'+Rd);
 
-        % Next step prediction
-        x_bef(:,k+1,n) = Ad*x_aft(:,k,n) + Bd*u(:,k,n);
-        P_bef(:,:,k+1,n) = Ad*P_aft(:,:,k,n)*Ad' + Qd; % can even do this before running the simulation
-    end        
-end
+    % measurement update
+    S(:,k) = y(:,k) - Cd*xbef(:,k);
+    xaft(:,k) = xbef(:,k) + L(:,:,k)*S(:,k);
+    Paft(:,:,k) = (eye(n,n)-L(:,:,k)*Cd)*Pbef(:,:,k);
 
-% % Mean over all runs
-x_mean = mean(x,3);
-y_mean = mean(y,3);
-x_aft_mean = mean(x_aft,3);
-x_err_mean = mean(x_err,3);
+    % Time update
+    xbef(:,k+1) = Ad*xaft(:,k) + Bd*u(:,k);
+    Pbef(:,:,k+1) = Ad*Paft(:,:,k)*Ad' + Qd; % can even do this before running the simulation
+end        
 
-% % Ideal
+%% Post Mortem
+
+% Ideal
 [y_ideal, t_ideal, x_ideal] = lsim(plant_d, u(:,:,1), time, x(:,1,1));
 
+xaft_err = x(:,1:tlen) - xaft;
+xbef_err = x(:,1:tlen) - xbef(:,1:tlen);
+% Norm of std of errors
+Naft = sqrt(sum(std(xaft_err,0,2).^2))
+Nbef = sqrt(sum(std(xbef_err,0,2).^2))
 
 %% Plotting
 
-fig_sim = figure('Name','Simulation');
-subplot(2,1,1)
-plot(time,x_mean(2,1:end-1),...
-     time,y_mean(1,1:end-1),...
-     time,x_aft_mean(2,:))
-legend('State','Meas','Est'); grid on; title('Filter')
-subplot(2,1,2)
-plot(time,x_err_mean)
-title('Error Estimate'); grid on
+fig_sim = namefig('Simulation');
+subplot(3,1,1:2)
+plot(time,x(2,1:tlen),...
+     time,y(1,1:tlen),...
+     time,xbef(2,1:tlen),...
+     time,xaft(2,1:tlen),...
+     t_ideal,y_ideal,...
+     'LineWidth',2)
+legend('State','Meas','Est a pri','Est a post','Model'); grid on; title('Filter')
+subplot(3,1,3)
+plot(time,xbef_err(2,:),...
+     time,xaft_err(2,:))
+legend('a priori','a posteriori'); title('Error Estimate'); grid on
 
-fig_ideal = figure('Name','Ideal');
-plot(t_ideal,y_ideal,...
-     t_ideal,x_ideal(:,2))
-legend('Meas','State'); grid on; title('Ideal')
-
-
+% fig_ideal = namefig('Ideal');
+% plot(t_ideal,y_ideal,...
+%      t_ideal,x_ideal(:,2))
+% legend('Meas','State'); grid on; title('Ideal')
+% 
+% 
 
 
 

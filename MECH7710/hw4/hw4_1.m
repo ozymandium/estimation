@@ -12,9 +12,10 @@ clear all; close all; clc
 Ts = 0.1;
 
 Ac = [0,1;-1,-1.4];
-Bw = [0;1];
+Gc = [0;1]; % process noise input matrix
+Gd = expm(Gc.*Ts); 
 Qc = 5^2;
-[Ad,Qd] = bryson(Ac,Qc,Bw,Ts); Qd
+[Ad,Qd] = bryson(Ac,Qc,Gc,Ts); Qd
 
 Cc = [1 0];
 Cd = exp(Cc*Ts);
@@ -22,7 +23,7 @@ Rc = 1^2;
 Rd = expm(Rc*Ts)
 
 %% a - Simulate Controlled system
-
+hw4
 time = 0:Ts:100;
 tlen = length(time);
 
@@ -32,8 +33,8 @@ x = zeros(2,tlen); % state
 y = zeros(1,tlen); % measurement
 
 for k = 1:tlen-1
-    x(:,k+1) = Ad*x(:,k) + Bw*w(k);
-    y(:,k) = Cd*x(:,k) + Rd*v(k);
+    x(:,k+1) = Ad*x(:,k) + Gd*w(k);
+    y(:,k) = Cd*x(:,k) + v(k);
 end
 
 %% b - find true Q,Qd,Rd
@@ -49,7 +50,7 @@ fprintf('True '),Qc_true, fprintf('True '), Qd_true
 
 [L_ss,Pbef_ss,Paft_ss,poles] = dlqe(Ad,eye(2),Cd,Qd,Rd)
 
-%% d - Steady State Kalman Filter
+%% d - Steady Stahw4te Kalman Filter
 
 Pbef = zeros(2,2,tlen);
 Pbef(:,:,1) = Pbef_ss; % use steady state P value for initial P guess
