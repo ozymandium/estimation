@@ -10,20 +10,19 @@ clear all; close all; clc
 % rng(1);
 
 %% Constants
+% system
 mass = 10;
 damping = 7;
 spring = 5;
 
 Ts = 0.05;
 time = 0:Ts:20;
-tlen = length(time);
 
 in_mag = 20;
 wstd = 0.05;
 vstd = 0.1;
 
-%% System
-
+% System
 Ac = [-damping/mass, -spring/mass; 1,0];
 Bc = [1/mass; 0];
 G = eye(2,2); % noise input matrix
@@ -34,10 +33,6 @@ n = length(Ac); % # states
 l = length(Dc); % # inputs
 m = size(Cc,1); % # measurements
 
-% [Ad,Bd,Cd,Dd] = c2dm(Ac,Bc,Cc,Dc, Ts,'zoh');
-plant_c = ss(Ac,Bc,Cc,Dc);
-plant_d = c2d(plant_c, Ts, 'zoh');
-    
 % process noise covariance in continuous
 % Qc = wstd^2*eye(n,n) % this causes estimate to follow ideal behavior of
 % unnoisy system
@@ -49,9 +44,16 @@ Qc = 0.3*eye(n,n)
 Rc = 0.001
 Rd = exp(Rc*Ts); % measurement noise covariance in discrete-time
 
+%% Begin agnostic code
+
+tlen = length(time);
+
+% [Ad,Bd,Cd,Dd] = c2dm(Ac,Bc,Cc,Dc, Ts,'zoh');
+plant_c = ss(Ac,Bc,Cc,Dc);
+plant_d = c2d(plant_c, Ts, 'zoh');
+    
 [Ad,Qd] = bryson(Ac,Qc,G,Ts)
 Bd = Ac\(Ad-eye(n,n))*Bc;
-
 
 % Steady State
 [Lss,Pbef_ss,Paft_ss,poles] = dlqe(Ad,eye(n,n),Cd,Qd,Rd);
@@ -126,15 +128,3 @@ subplot(3,1,3)
 plot(time,xbef_err(2,:),...
      time,xaft_err(2,:))
 legend('a priori','a posteriori'); title('Error Estimate'); grid on
-
-% fig_ideal = namefig('Ideal');
-% plot(t_ideal,y_ideal,...
-%      t_ideal,x_ideal(:,2))
-% legend('Meas','State'); grid on; title('Ideal')
-% 
-% 
-
-
-
-
-
